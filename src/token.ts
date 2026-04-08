@@ -91,36 +91,44 @@ export async function getDashboardData(): Promise<TokenDashboardData> {
 }
 
 export async function getTopRecipients(limit: number = 5): Promise<TopRecipient[]> {
-  const logs = await client.getLogs({
-    address: ZABAL.address,
-    event: {
-      type: 'event',
-      name: 'Transfer',
-      inputs: [
-        { type: 'address', name: 'from', indexed: true },
-        { type: 'address', name: 'to', indexed: true },
-        { type: 'uint256', name: 'value' },
-      ],
-    },
-    args: { from: ZABAL.zaalAddress },
-    fromBlock: 0n,
-    toBlock: 'latest',
-  });
+  try {
+    // Get recent block (~last 30 days on Base, ~2s blocks)
+    const currentBlock = await client.getBlockNumber();
+    const fromBlock = currentBlock - 1_300_000n; // ~30 days
 
-  const totals = new Map<string, bigint>();
-  for (const log of logs) {
-    const to = log.args.to as string;
-    const value = log.args.value as bigint;
-    if (to && value) {
-      totals.set(to, (totals.get(to) ?? 0n) + value);
+    const logs = await client.getLogs({
+      address: ZABAL.address,
+      event: {
+        type: 'event',
+        name: 'Transfer',
+        inputs: [
+          { type: 'address', name: 'from', indexed: true },
+          { type: 'address', name: 'to', indexed: true },
+          { type: 'uint256', name: 'value' },
+        ],
+      },
+      args: { from: ZABAL.zaalAddress },
+      fromBlock: fromBlock > 0n ? fromBlock : 0n,
+      toBlock: 'latest',
+    });
+
+    const totals = new Map<string, bigint>();
+    for (const log of logs) {
+      const to = log.args.to as string;
+      const value = log.args.value as bigint;
+      if (to && value) {
+        totals.set(to, (totals.get(to) ?? 0n) + value);
+      }
     }
-  }
 
-  return [...totals.entries()]
-    .filter(([addr]) => addr.toLowerCase() !== ZABAL.burnAddress.toLowerCase())
-    .sort((a, b) => (b[1] > a[1] ? 1 : -1))
-    .slice(0, limit)
-    .map(([address, amount]) => ({ address: address as Address, amount }));
+    return [...totals.entries()]
+      .filter(([addr]) => addr.toLowerCase() !== ZABAL.burnAddress.toLowerCase())
+      .sort((a, b) => (b[1] > a[1] ? 1 : -1))
+      .slice(0, limit)
+      .map(([address, amount]) => ({ address: address as Address, amount }));
+  } catch {
+    return [];
+  }
 }
 
 export async function getBalance(address: Address): Promise<bigint> {
@@ -134,57 +142,58 @@ export async function getBalance(address: Address): Promise<bigint> {
 }
 
 export async function getTopHolders(limit: number = 5): Promise<Array<{ address: Address; balance: bigint }>> {
-  const logs = await client.getLogs({
-    address: ZABAL.address,
-    event: {
-      type: 'event',
-      name: 'Transfer',
-      inputs: [
-        { type: 'address', name: 'from', indexed: true },
-        { type: 'address', name: 'to', indexed: true },
-        { type: 'uint256', name: 'value' },
-      ],
-    },
-    fromBlock: 0n,
-    toBlock: 'latest',
-  });
+  try {
+    // Get recent block (~last 30 days)
+    const currentBlock = await client.getBlockNumber();
+    const fromBlock = currentBlock - 1_300_000n;
 
-  // Collect unique addresses (recipients)
-  const addresses = new Set<string>();
-  for (const log of logs) {
-    if (log.args.to) addresses.add(log.args.to as string);
-    if (log.args.from) addresses.add(log.args.from as string);
-  }
+    const logs = await client.getLogs({
+      address: ZABAL.address,
+      event: {
+        type: 'event',
+        name: 'Transfer',
+        inputs: [
+          { type: 'address', name: 'from', indexed: true },
+          { type: 'address', name: 'to', indexed: true },
+          { type: 'uint256', name: 'value' },
+        ],
+      },
+      fromBlock: fromBlock > 0n ? fromBlock : 0n,
+      toBlock: 'latest',
+    });
 
-  // Remove burn address and zero address
-  addresses.delete(ZABAL.burnAddress.toLowerCase());
-  addresses.delete(ZABAL.burnAddress);
-  addresses.delete('0x0000000000000000000000000000000000000000');
+    // Collect unique addresses
+    const addresses = new Set<string>();
+    for (const log of logs) {
+      if (log.args.to) addresses.add(log.args.to as string);
+      if (log.args.from) addresses.add(log.args.from as string);
+    }
 
-  // Get balances for top addresses (batch in groups to avoid RPC limits)
-  const addrArray = [...addresses].slice(0, 20) as Address[];
+    addresses.delete(ZABAL.burnAddress.toLowerCase());
+    addresses.delete(ZABAL.burnAddress);
+    addresses.delete('0x0000000000000000000000000000000000000000');
 
-  if (addrArray.length === 0) {
+    const addrArray = [...addresses].slice(0, 20) as Address[];
+    if (addrArray.length === 0) return [];
+
+    const balances = await client.multicall({
+      contracts: addrArray.map((addr) => ({
+        address: ZABAL.address,
+        abi: erc20Abi,
+        functionName: 'balanceOf' as const,
+        args: [addr],
+      })),
+    });
+
+    return addrArray
+      .map((addr, i) => ({
+        address: addr,
+        balance: (balances[i].result as bigint) ?? 0n,
+      }))
+      .filter((h) => h.balance > 0n)
+      .sort((a, b) => (b.balance > a.balance ? 1 : -1))
+      .slice(0, limit);
+  } catch {
     return [];
   }
-
-  const balances = await client.multicall({
-    contracts: addrArray.map((addr) => ({
-      address: ZABAL.address,
-      abi: erc20Abi,
-      functionName: 'balanceOf' as const,
-      args: [addr],
-    })),
-  });
-
-  const holders = addrArray
-    .map((addr, i) => ({
-      address: addr,
-      balance: (balances[i].result as bigint) ?? 0n,
-    }))
-    .filter((h) => h.balance > 0n)
-    .sort((a, b) => (b.balance > a.balance ? 1 : -1))
-    .slice(0, limit);
-
-  return holders;
 }
