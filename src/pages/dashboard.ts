@@ -8,6 +8,8 @@ export function buildDashboardPage(data: TokenDashboardData, baseUrl: string) {
   const burned = formatTokenAmount(data.burned);
   const distributed = formatTokenAmount(data.distributed);
 
+  const burnPct = Number(data.burned * 10000n / data.totalSupply) / 100;
+
   return {
     version: '1.0' as const,
     theme: { accent: 'amber' as const },
@@ -17,7 +19,7 @@ export function buildDashboardPage(data: TokenDashboardData, baseUrl: string) {
         page: {
           type: 'stack' as const,
           props: { direction: 'vertical' as const, gap: 'md' as const },
-          children: ['header', 'stats', 'divider', 'burns_section', 'btn_row'],
+          children: ['header', 'stats', 'divider', 'burns_section', 'btn_row_1', 'btn_row_2', 'btn_row_3'],
         },
         header: {
           type: 'item' as const,
@@ -52,7 +54,7 @@ export function buildDashboardPage(data: TokenDashboardData, baseUrl: string) {
         burns_section: {
           type: 'stack' as const,
           props: { direction: 'vertical' as const, gap: 'sm' as const },
-          children: ['burned_item', 'distributed_item'],
+          children: ['burned_item', 'burn_progress', 'distributed_item'],
         },
         burned_item: {
           type: 'item' as const,
@@ -63,6 +65,14 @@ export function buildDashboardPage(data: TokenDashboardData, baseUrl: string) {
           type: 'badge' as const,
           props: { label: 'Deflationary', color: 'red' as const, icon: 'flame' as const },
         },
+        burn_progress: {
+          type: 'progress' as const,
+          props: {
+            value: burnPct,
+            max: 100,
+            label: `${burnPct.toFixed(2)}% of supply burned`,
+          },
+        },
         distributed_item: {
           type: 'item' as const,
           props: { title: `Sent from ZAAL: ${distributed} ZABAL`, description: 'Community distributions' },
@@ -72,10 +82,20 @@ export function buildDashboardPage(data: TokenDashboardData, baseUrl: string) {
           type: 'badge' as const,
           props: { label: 'Community', color: 'green' as const, icon: 'send' as const },
         },
-        btn_row: {
+        btn_row_1: {
           type: 'stack' as const,
           props: { direction: 'horizontal' as const, gap: 'sm' as const },
-          children: ['swap_btn', 'send_btn', 'more_btn'],
+          children: ['swap_btn', 'send_btn'],
+        },
+        btn_row_2: {
+          type: 'stack' as const,
+          props: { direction: 'horizontal' as const, gap: 'sm' as const },
+          children: ['more_btn', 'leaderboard_btn'],
+        },
+        btn_row_3: {
+          type: 'stack' as const,
+          props: { direction: 'horizontal' as const, gap: 'sm' as const },
+          children: ['balance_btn', 'newsletter_btn', 'share_btn'],
         },
         swap_btn: {
           type: 'button' as const,
@@ -99,11 +119,54 @@ export function buildDashboardPage(data: TokenDashboardData, baseUrl: string) {
         },
         more_btn: {
           type: 'button' as const,
-          props: { label: 'Activity', variant: 'primary' as const },
+          props: { label: 'Transfers', variant: 'primary' as const },
           on: {
             press: {
               action: 'submit' as const,
               params: { target: `${baseUrl}/activity` },
+            },
+          },
+        },
+        leaderboard_btn: {
+          type: 'button' as const,
+          props: { label: 'Top Holders', icon: 'bar-chart' as const },
+          on: {
+            press: {
+              action: 'submit' as const,
+              params: { target: `${baseUrl}/leaderboard` },
+            },
+          },
+        },
+        balance_btn: {
+          type: 'button' as const,
+          props: { label: 'Balance', icon: 'wallet' as const },
+          on: {
+            press: {
+              action: 'submit' as const,
+              params: { target: `${baseUrl}/balance-input` },
+            },
+          },
+        },
+        newsletter_btn: {
+          type: 'button' as const,
+          props: { label: 'Year of the ZABAL', icon: 'book-open' as const },
+          on: {
+            press: {
+              action: 'open_url' as const,
+              params: { target: 'https://paragraph.xyz/@zabal' },
+            },
+          },
+        },
+        share_btn: {
+          type: 'button' as const,
+          props: { label: 'Share', icon: 'share' as const },
+          on: {
+            press: {
+              action: 'compose_cast' as const,
+              params: {
+                text: '$ZABAL - the community token for The ZAO on Base',
+                embeds: [baseUrl],
+              },
             },
           },
         },

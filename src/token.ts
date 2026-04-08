@@ -43,6 +43,25 @@ export interface TopRecipient {
 
 // ── Data Fetching ──────────────────────────────────────────
 
+async function fetchPrice(): Promise<{ priceUsd: number; marketCapUsd: number }> {
+  try {
+    const res = await fetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${ZABAL.address}`
+    );
+    const data = await res.json() as any;
+    const pair = data?.pairs?.[0];
+    if (pair) {
+      return {
+        priceUsd: parseFloat(pair.priceUsd) || 0.000000141,
+        marketCapUsd: pair.marketCap || pair.fdv || 14100,
+      };
+    }
+  } catch {
+    // fallback on error
+  }
+  return { priceUsd: 0.000000141, marketCapUsd: 14100 };
+}
+
 export async function getDashboardData(): Promise<TokenDashboardData> {
   const [totalSupply, burned, zaalBalance] = await client.multicall({
     contracts: [
@@ -58,9 +77,7 @@ export async function getDashboardData(): Promise<TokenDashboardData> {
 
   const distributed = supply - burnedAmt - zaalBal;
 
-  const priceUsd = 0.000000141;
-  const circulatingFloat = Number(supply - burnedAmt) / 1e18;
-  const marketCapUsd = circulatingFloat * priceUsd;
+  const { priceUsd, marketCapUsd } = await fetchPrice();
 
   return {
     totalSupply: supply,
@@ -104,4 +121,70 @@ export async function getTopRecipients(limit: number = 5): Promise<TopRecipient[
     .sort((a, b) => (b[1] > a[1] ? 1 : -1))
     .slice(0, limit)
     .map(([address, amount]) => ({ address: address as Address, amount }));
+}
+
+export async function getBalance(address: Address): Promise<bigint> {
+  const balance = await client.readContract({
+    address: ZABAL.address,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [address],
+  });
+  return balance;
+}
+
+export async function getTopHolders(limit: number = 5): Promise<Array<{ address: Address; balance: bigint }>> {
+  const logs = await client.getLogs({
+    address: ZABAL.address,
+    event: {
+      type: 'event',
+      name: 'Transfer',
+      inputs: [
+        { type: 'address', name: 'from', indexed: true },
+        { type: 'address', name: 'to', indexed: true },
+        { type: 'uint256', name: 'value' },
+      ],
+    },
+    fromBlock: 0n,
+    toBlock: 'latest',
+  });
+
+  // Collect unique addresses (recipients)
+  const addresses = new Set<string>();
+  for (const log of logs) {
+    if (log.args.to) addresses.add(log.args.to as string);
+    if (log.args.from) addresses.add(log.args.from as string);
+  }
+
+  // Remove burn address and zero address
+  addresses.delete(ZABAL.burnAddress.toLowerCase());
+  addresses.delete(ZABAL.burnAddress);
+  addresses.delete('0x0000000000000000000000000000000000000000');
+
+  // Get balances for top addresses (batch in groups to avoid RPC limits)
+  const addrArray = [...addresses].slice(0, 20) as Address[];
+
+  if (addrArray.length === 0) {
+    return [];
+  }
+
+  const balances = await client.multicall({
+    contracts: addrArray.map((addr) => ({
+      address: ZABAL.address,
+      abi: erc20Abi,
+      functionName: 'balanceOf' as const,
+      args: [addr],
+    })),
+  });
+
+  const holders = addrArray
+    .map((addr, i) => ({
+      address: addr,
+      balance: (balances[i].result as bigint) ?? 0n,
+    }))
+    .filter((h) => h.balance > 0n)
+    .sort((a, b) => (b.balance > a.balance ? 1 : -1))
+    .slice(0, limit);
+
+  return holders;
 }

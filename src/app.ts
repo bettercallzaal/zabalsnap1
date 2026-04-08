@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { registerSnapHandler } from '@farcaster/snap-hono';
-import { getDashboardData, getTopRecipients } from './token.js';
+import { getDashboardData, getTopRecipients, getBalance, getTopHolders } from './token.js';
 import { buildDashboardPage } from './pages/dashboard.js';
 import { buildActivityPage } from './pages/activity.js';
+import { buildBalanceInputPage, buildBalanceResultPage } from './pages/balance.js';
+import { buildLeaderboardPage } from './pages/leaderboard.js';
 
 const app = new Hono();
 
@@ -48,6 +50,48 @@ registerSnapHandler(
     return buildActivityPage(recipients, baseUrl);
   },
   { path: '/activity' },
+);
+
+// ── Balance input page ─────────────────────────────────────
+
+registerSnapHandler(
+  app,
+  async (ctx) => {
+    const baseUrl = getBaseUrl(ctx.request);
+    return buildBalanceInputPage(baseUrl);
+  },
+  { path: '/balance-input' },
+);
+
+// ── Balance result (POST with address input) ───────────────
+
+registerSnapHandler(
+  app,
+  async (ctx) => {
+    const baseUrl = getBaseUrl(ctx.request);
+    if (ctx.action.type === 'get') {
+      return buildBalanceInputPage(baseUrl);
+    }
+    const address = (ctx.action.inputs?.address as string) || '';
+    if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return buildBalanceInputPage(baseUrl);
+    }
+    const balance = await getBalance(address as `0x${string}`);
+    return buildBalanceResultPage(address, balance, baseUrl);
+  },
+  { path: '/balance' },
+);
+
+// ── Leaderboard page ───────────────────────────────────────
+
+registerSnapHandler(
+  app,
+  async (ctx) => {
+    const baseUrl = getBaseUrl(ctx.request);
+    const holders = await getTopHolders(5);
+    return buildLeaderboardPage(holders, baseUrl);
+  },
+  { path: '/leaderboard' },
 );
 
 export default app;
