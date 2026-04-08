@@ -12,6 +12,9 @@ const app = new Hono();
 // Allow the Farcaster emulator (and any client) to reach this snap
 app.use('*', cors({ origin: '*' }));
 
+// Skip JFS verification for POC - pass explicitly since Vercel Edge may not expose process.env to snap-hono
+const skipJFS = { skipJFSVerification: true } as any;
+
 function getBaseUrl(req: Request): string {
   if (process.env.SNAP_PUBLIC_BASE_URL) {
     const url = process.env.SNAP_PUBLIC_BASE_URL.replace(/\/$/, '');
@@ -39,7 +42,7 @@ registerSnapHandler(app, async (ctx) => {
   // POST to root = "Back" from activity page
   const data = await getDashboardData();
   return buildDashboardPage(data, baseUrl);
-});
+}, skipJFS);
 
 // ── Activity page ──────────────────────────────────────────
 
@@ -50,7 +53,7 @@ registerSnapHandler(
     const recipients = await getTopRecipients(5);
     return buildActivityPage(recipients, baseUrl);
   },
-  { path: '/activity' },
+  { path: '/activity', ...skipJFS },
 );
 
 // ── Balance input page ─────────────────────────────────────
@@ -61,7 +64,7 @@ registerSnapHandler(
     const baseUrl = getBaseUrl(ctx.request);
     return buildBalanceInputPage(baseUrl);
   },
-  { path: '/balance-input' },
+  { path: '/balance-input', ...skipJFS },
 );
 
 // ── Balance result (POST with address input) ───────────────
@@ -80,7 +83,7 @@ registerSnapHandler(
     const balance = await getBalance(address as `0x${string}`);
     return buildBalanceResultPage(address, balance, baseUrl);
   },
-  { path: '/balance' },
+  { path: '/balance', ...skipJFS },
 );
 
 // ── Leaderboard page ───────────────────────────────────────
@@ -92,7 +95,7 @@ registerSnapHandler(
     const holders = await getTopHolders(5);
     return buildLeaderboardPage(holders, baseUrl);
   },
-  { path: '/leaderboard' },
+  { path: '/leaderboard', ...skipJFS },
 );
 
 export default app;
