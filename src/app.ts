@@ -50,8 +50,11 @@ registerSnapHandler(
   app,
   async (ctx) => {
     const baseUrl = getBaseUrl(ctx.request);
-    const recipients = await getTopRecipients(5);
-    return buildActivityPage(recipients, baseUrl);
+    const [recipients, data] = await Promise.all([
+      getTopRecipients(5),
+      getDashboardData(),
+    ]);
+    return buildActivityPage(recipients, baseUrl, data);
   },
   { path: '/activity', ...skipJFS },
 );

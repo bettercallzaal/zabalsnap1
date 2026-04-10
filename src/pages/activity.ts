@@ -1,14 +1,25 @@
-import type { TopRecipient } from '../token.js';
+import type { TopRecipient, TokenDashboardData } from '../token.js';
 import { ZABAL } from '../token.js';
 import { formatTokenAmount, shortenAddress } from '../utils.js';
 
-export function buildActivityPage(recipients: TopRecipient[], baseUrl: string) {
+export function buildActivityPage(recipients: TopRecipient[], baseUrl: string, data: TokenDashboardData) {
   const bars = recipients.map((r) => ({
     label: `${shortenAddress(r.address)} ${formatTokenAmount(r.amount)}`,
     value: Number(r.amount / BigInt(1e18)),
   }));
 
   const maxVal = bars.length > 0 ? Math.max(...bars.map((b) => b.value)) : 1;
+
+  // Compute real supply breakdown percentages from on-chain data
+  const burnedPct = data.totalSupply > 0n
+    ? Number(data.burned * 10000n / data.totalSupply) / 100
+    : 0;
+  const zaalPct = data.totalSupply > 0n
+    ? Number(data.zaalBalance * 10000n / data.totalSupply) / 100
+    : 0;
+  const distributedPct = data.totalSupply > 0n
+    ? Number(data.distributed * 10000n / data.totalSupply) / 100
+    : 0;
 
   return {
     version: '1.0' as const,
@@ -45,9 +56,9 @@ export function buildActivityPage(recipients: TopRecipient[], baseUrl: string) {
           type: 'bar_chart' as const,
           props: {
             bars: [
-              { label: 'LP Pool (65.2%)', value: 65.2 },
-              { label: 'Vault Locked (30.0%)', value: 30.0 },
-              { label: 'Airdrop (4.8%)', value: 4.8 },
+              { label: `Burned (${burnedPct.toFixed(1)}%)`, value: burnedPct },
+              { label: `ZAAL Wallet (${zaalPct.toFixed(1)}%)`, value: zaalPct },
+              { label: `Distributed (${distributedPct.toFixed(1)}%)`, value: distributedPct },
             ],
             color: 'green' as const,
             max: 100,
@@ -56,7 +67,7 @@ export function buildActivityPage(recipients: TopRecipient[], baseUrl: string) {
         btn_row: {
           type: 'stack' as const,
           props: { direction: 'horizontal' as const, gap: 'sm' as const, justify: 'between' as const },
-          children: ['back_btn', 'basescan_btn'],
+          children: ['back_btn', 'share_btn', 'basescan_btn'],
         },
         back_btn: {
           type: 'button' as const,
@@ -65,6 +76,19 @@ export function buildActivityPage(recipients: TopRecipient[], baseUrl: string) {
             press: {
               action: 'submit' as const,
               params: { target: `${baseUrl}/` },
+            },
+          },
+        },
+        share_btn: {
+          type: 'button' as const,
+          props: { label: 'Share', icon: 'share' as const },
+          on: {
+            press: {
+              action: 'compose_cast' as const,
+              params: {
+                text: `$ZABAL supply: ${burnedPct.toFixed(1)}% burned, ${distributedPct.toFixed(1)}% distributed to the community`,
+                embeds: [`${baseUrl}/activity`],
+              },
             },
           },
         },

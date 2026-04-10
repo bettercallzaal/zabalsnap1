@@ -77,17 +77,58 @@ export async function getDashboardData(): Promise<TokenDashboardData> {
 
   const distributed = supply - burnedAmt - zaalBal;
 
-  const { priceUsd, marketCapUsd } = await fetchPrice();
+  const [{ priceUsd, marketCapUsd }, holders] = await Promise.all([
+    fetchPrice(),
+    getHolderCount(),
+  ]);
 
   return {
     totalSupply: supply,
     burned: burnedAmt,
     zaalBalance: zaalBal,
     distributed,
-    holders: 340,
+    holders,
     priceUsd,
     marketCapUsd,
   };
+}
+
+export async function getHolderCount(): Promise<number> {
+  try {
+    const currentBlock = await client.getBlockNumber();
+    const fromBlock = currentBlock - 1_300_000n; // ~30 days
+
+    const logs = await client.getLogs({
+      address: ZABAL.address,
+      event: {
+        type: 'event',
+        name: 'Transfer',
+        inputs: [
+          { type: 'address', name: 'from', indexed: true },
+          { type: 'address', name: 'to', indexed: true },
+          { type: 'uint256', name: 'value' },
+        ],
+      },
+      fromBlock: fromBlock > 0n ? fromBlock : 0n,
+      toBlock: 'latest',
+    });
+
+    const recipients = new Set<string>();
+    for (const log of logs) {
+      const to = log.args.to as string;
+      if (
+        to &&
+        to.toLowerCase() !== ZABAL.burnAddress.toLowerCase() &&
+        to !== '0x0000000000000000000000000000000000000000'
+      ) {
+        recipients.add(to.toLowerCase());
+      }
+    }
+
+    return recipients.size || 340; // fallback if no logs
+  } catch {
+    return 340;
+  }
 }
 
 export async function getTopRecipients(limit: number = 5): Promise<TopRecipient[]> {
